@@ -1,16 +1,74 @@
 package main
 
 import (
-	"cepuin_chat/internal/websocket"
 	"log"
 	"net/http"
+
+	"cepuin_chat/internal/chat"
+	"cepuin_chat/internal/database"
+	"cepuin_chat/internal/repository"
+	"cepuin_chat/internal/websocket"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// =========================
+	// LOAD ENV
+	// =========================
+
+	if err := godotenv.Load(); err != nil {
+		log.Println("Warning: .env file not found")
+	}
+
+	// =========================
+	// DATABASE
+	// =========================
+
+	db, err := database.NewPostgresPool()
+	if err != nil {
+		log.Fatal("Database connection failed: ", err)
+	}
+	defer db.Close()
+
+	log.Println("PostgreSQL connected successfully")
+
+	// =========================
+	// REPOSITORY
+	// =========================
+
+	chatRepository := repository.NewChatRepository(db)
+	chatHandler := chat.NewHandler(chatRepository)
+
+	// =========================
+	// WEBSOCKET
+	// =========================
+
+	wsHandler := websocket.NewHandler(chatRepository)
+
+	// =========================
+	// HTTP ROUTER
+	// =========================
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", healthHandler)
-	mux.HandleFunc("/ws", websocket.Handler)
+
+	mux.HandleFunc("/ws", wsHandler.Handle)
+
+	mux.HandleFunc(
+		"/chat/history",
+		chatHandler.GetHistory,
+	)
+
+	mux.HandleFunc(
+		"/chat/list",
+		chatHandler.GetList,
+	)
+
+	// =========================
+	// SERVER
+	// =========================
 
 	server := &http.Server{
 		Addr:    ":8080",
