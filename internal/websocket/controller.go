@@ -44,70 +44,138 @@ func (c *Controller) Handle(
 
 	ctx := r.Context()
 
-	var currentUserID string
+	// =========================
+	// GET USER ID
+	// =========================
+
+	currentUserID := r.URL.Query().Get("user_id")
+
+	if currentUserID == "" {
+		log.Println("WebSocket rejected: user_id is empty")
+
+		conn.Close(
+			websocket.StatusPolicyViolation,
+			"user_id required",
+		)
+
+		return
+	}
+
+	userID, err := uuid.Parse(currentUserID)
+
+	if err != nil {
+		log.Printf("invalid user_id: %v", err)
+
+		conn.Close(
+			websocket.StatusPolicyViolation,
+			"invalid user_id",
+		)
+
+		return
+	}
+
+	currentUserID = userID.String()
+
+	// =========================
+	// REGISTER USER IMMEDIATELY
+	// =========================
+
+	c.Manager.AddClient(
+		currentUserID,
+		conn,
+	)
+
+	log.Printf(
+		"WebSocket user registered: %s",
+		currentUserID,
+	)
+
+	// =========================
+	// CLEANUP
+	// =========================
 
 	defer func() {
-		if currentUserID != "" {
-			c.Manager.RemoveClient(currentUserID)
-		}
+		c.Manager.RemoveClient(currentUserID)
 
-		conn.Close(websocket.StatusNormalClosure, "")
+		conn.Close(
+			websocket.StatusNormalClosure,
+			"",
+		)
 
-		log.Println("--------------WebSocket client disconnected---------------")
+		log.Printf(
+			"WebSocket user disconnected: %s",
+			currentUserID,
+		)
+
+		log.Println(
+			"--------------WebSocket client disconnected---------------",
+		)
 	}()
+
+	// =========================
+	// READ MESSAGE
+	// =========================
 
 	for {
 		_, data, err := conn.Read(ctx)
 
 		if err != nil {
-			log.Printf("WebSocket read error: %v", err)
+			log.Printf(
+				"WebSocket read error: %v",
+				err,
+			)
+
 			return
 		}
 
-		log.Printf("received message: %s", string(data))
+		log.Printf(
+			"received message: %s",
+			string(data),
+		)
 
 		var msg ChatMessage
 
 		if err := json.Unmarshal(data, &msg); err != nil {
-			log.Printf("invalid message JSON: %v", err)
+			log.Printf(
+				"invalid message JSON: %v",
+				err,
+			)
+
 			continue
 		}
 
-		senderID, err := uuid.Parse(msg.SenderID)
-		if err != nil {
-			log.Printf("invalid sender_id: %v", err)
-			continue
-		}
+		// =========================
+		// RECEIVER
+		// =========================
 
 		receiverID, err := uuid.Parse(msg.ReceiverID)
+
 		if err != nil {
-			log.Printf("invalid receiver_id: %v", err)
+			log.Printf(
+				"invalid receiver_id: %v",
+				err,
+			)
+
 			continue
 		}
 
-		// Register koneksi user.
-		currentUserID = senderID.String()
+		// =========================
+		// SAVE MESSAGE
+		// =========================
 
-		c.Manager.AddClient(
-			currentUserID,
-			conn,
-		)
-
-		log.Printf(
-			"WebSocket user registered: %s",
-			currentUserID,
-		)
-
-		// Business logic tetap di Service.
 		savedMessage, err := c.Service.SendMessage(
 			ctx,
-			senderID,
+			userID,
 			receiverID,
 			msg.Message,
 		)
 
 		if err != nil {
-			log.Printf("failed to send message: %v", err)
+			log.Printf(
+				"failed to send message: %v",
+				err,
+			)
+
 			continue
 		}
 
@@ -117,12 +185,24 @@ func (c *Controller) Handle(
 			savedMessage.ConversationID,
 		)
 
+		// =========================
+		// SERIALIZE MESSAGE
+		// =========================
+
 		dataToSend, err := json.Marshal(savedMessage)
 
 		if err != nil {
-			log.Printf("failed to marshal message: %v", err)
+			log.Printf(
+				"failed to marshal message: %v",
+				err,
+			)
+
 			continue
 		}
+
+		// =========================
+		// SEND TO RECEIVER
+		// =========================
 
 		err = c.Manager.SendToUser(
 			context.Background(),
