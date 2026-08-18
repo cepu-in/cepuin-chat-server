@@ -4,28 +4,32 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"cepuin_chat/internal/repository"
-
 	"github.com/google/uuid"
 )
 
-type Handler struct {
-	Repository *repository.ChatRepository
+type Controller struct {
+	Service *Service
 }
 
-func NewHandler(repo *repository.ChatRepository) *Handler {
-	return &Handler{
-		Repository: repo,
+func NewController(service *Service) *Controller {
+	return &Controller{
+		Service: service,
 	}
 }
 
 // ============================================================
 // GET CHAT LIST
 // ============================================================
-// GET /chat/list?user_id=xxxx
-func (h *Handler) GetList(w http.ResponseWriter, r *http.Request) {
 
-	w.Header().Set("Content-Type", "application/json")
+func (c *Controller) GetList(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+
+	w.Header().Set(
+		"Content-Type",
+		"application/json",
+	)
 
 	userIDString := r.URL.Query().Get("user_id")
 
@@ -49,7 +53,7 @@ func (h *Handler) GetList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chats, err := h.Repository.GetChatList(
+	chats, err := c.Service.GetChatList(
 		r.Context(),
 		userID,
 	)
@@ -63,22 +67,26 @@ func (h *Handler) GetList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if chats == nil {
-		chats = []repository.ChatListItem{}
-	}
-
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"chats": chats,
-	})
+	json.NewEncoder(w).Encode(
+		map[string]interface{}{
+			"chats": chats,
+		},
+	)
 }
 
 // ============================================================
 // GET CHAT HISTORY
 // ============================================================
-// GET /chat/history?user_id=xxxx&target_user_id=xxxx
-func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
 
-	w.Header().Set("Content-Type", "application/json")
+func (c *Controller) GetHistory(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+
+	w.Header().Set(
+		"Content-Type",
+		"application/json",
+	)
 
 	userIDString := r.URL.Query().Get("user_id")
 	targetUserIDString := r.URL.Query().Get("target_user_id")
@@ -93,6 +101,7 @@ func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID, err := uuid.Parse(userIDString)
+
 	if err != nil {
 		http.Error(
 			w,
@@ -103,6 +112,7 @@ func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	targetUserID, err := uuid.Parse(targetUserIDString)
+
 	if err != nil {
 		http.Error(
 			w,
@@ -112,7 +122,7 @@ func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	messages, err := h.Repository.GetMessageHistory(
+	messages, err := c.Service.GetChatHistory(
 		r.Context(),
 		userID,
 		targetUserID,
@@ -127,11 +137,9 @@ func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if messages == nil {
-		messages = []repository.Message{}
-	}
-
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"messages": messages,
-	})
+	json.NewEncoder(w).Encode(
+		map[string]interface{}{
+			"messages": messages,
+		},
+	)
 }

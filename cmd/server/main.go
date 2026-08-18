@@ -27,7 +27,7 @@ func main() {
 
 	db, err := database.NewPostgresPool()
 	if err != nil {
-		log.Fatal("Database connection failed: ", err)
+		log.Fatal("Database connection failed:", err)
 	}
 	defer db.Close()
 
@@ -38,13 +38,23 @@ func main() {
 	// =========================
 
 	chatRepository := repository.NewChatRepository(db)
-	chatHandler := chat.NewHandler(chatRepository)
+
+	// =========================
+	// CHAT SERVICE
+	// =========================
+
+	chatService := chat.NewService(chatRepository)
 
 	// =========================
 	// WEBSOCKET
 	// =========================
 
-	wsHandler := websocket.NewHandler(chatRepository)
+	clientManager := websocket.NewClientManager()
+
+	wsController := websocket.NewController(
+		chatService,
+		clientManager,
+	)
 
 	// =========================
 	// HTTP ROUTER
@@ -52,18 +62,16 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/health", healthHandler)
-
-	mux.HandleFunc("/ws", wsHandler.Handle)
-
+	// Health check
 	mux.HandleFunc(
-		"/chat/history",
-		chatHandler.GetHistory,
+		"/health",
+		healthHandler,
 	)
 
+	// WebSocket
 	mux.HandleFunc(
-		"/chat/list",
-		chatHandler.GetList,
+		"/ws",
+		wsController.Handle,
 	)
 
 	// =========================
@@ -75,7 +83,9 @@ func main() {
 		Handler: mux,
 	}
 
-	log.Println("=====================CEPUIN CHAT SERVER starting on :8080 =======================")
+	log.Println(
+		"=====================CEPUIN CHAT SERVER starting on :8080 =======================",
+	)
 
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatal(err)
@@ -86,5 +96,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	w.Write([]byte(`{"status":"ok","service":"cepuin-chat"}`))
+	_, _ = w.Write([]byte(
+		`{"status":"ok","service":"cepuin-chat"}`,
+	))
 }

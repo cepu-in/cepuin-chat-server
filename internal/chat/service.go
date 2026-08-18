@@ -1,0 +1,128 @@
+package chat
+
+import (
+	"context"
+	"fmt"
+
+	"cepuin_chat/internal/repository"
+
+	"github.com/google/uuid"
+)
+
+type Service struct {
+	Repository *repository.ChatRepository
+}
+
+func NewService(repo *repository.ChatRepository) *Service {
+	return &Service{
+		Repository: repo,
+	}
+}
+
+// ============================================================
+// GET CHAT LIST
+// ============================================================
+
+func (s *Service) GetChatList(
+	ctx context.Context,
+	userID uuid.UUID,
+) ([]repository.ChatListItem, error) {
+
+	chats, err := s.Repository.GetChatList(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("service get chat list: %w", err)
+	}
+
+	if chats == nil {
+		chats = []repository.ChatListItem{}
+	}
+
+	return chats, nil
+}
+
+// ============================================================
+// GET CHAT HISTORY
+// ============================================================
+
+func (s *Service) GetChatHistory(
+	ctx context.Context,
+	userID uuid.UUID,
+	targetUserID uuid.UUID,
+) ([]repository.Message, error) {
+
+	if userID == targetUserID {
+		return nil, fmt.Errorf("user cannot chat with himself")
+	}
+
+	messages, err := s.Repository.GetMessageHistory(
+		ctx,
+		userID,
+		targetUserID,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("service get chat history: %w", err)
+	}
+
+	if messages == nil {
+		messages = []repository.Message{}
+	}
+
+	return messages, nil
+}
+
+// ============================================================
+// SEND MESSAGE
+// ============================================================
+
+func (s *Service) SendMessage(
+	ctx context.Context,
+	senderID uuid.UUID,
+	receiverID uuid.UUID,
+	message string,
+) (*repository.Message, error) {
+
+	if senderID == receiverID {
+		return nil, fmt.Errorf("sender and receiver cannot be the same")
+	}
+
+	if message == "" {
+		return nil, fmt.Errorf("message cannot be empty")
+	}
+
+	conversationID, err := s.Repository.GetOrCreateConversation(
+		ctx,
+		senderID,
+		receiverID,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf(
+			"get/create conversation: %w",
+			err,
+		)
+	}
+
+	messageID, err := s.Repository.CreateMessage(
+		ctx,
+		conversationID,
+		senderID,
+		receiverID,
+		message,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf(
+			"create message: %w",
+			err,
+		)
+	}
+
+	return &repository.Message{
+		ID:             messageID,
+		ConversationID: conversationID,
+		SenderID:       senderID,
+		ReceiverID:     receiverID,
+		Message:        message,
+	}, nil
+}
