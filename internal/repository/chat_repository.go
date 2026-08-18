@@ -52,7 +52,7 @@ type Message struct {
 	ReceiverID     uuid.UUID  `json:"receiver_id"`
 	Message        string     `json:"message"`
 	CreatedAt      time.Time  `json:"created_at"`
-	ReadAt        *time.Time `json:"read_at,omitempty"`
+	ReadAt         *time.Time `json:"read_at,omitempty"`
 }
 
 // GetOrCreateConversation mencari conversation antara dua user.
@@ -147,13 +147,7 @@ func (r *ChatRepository) GetChatList(
 			m.message AS last_message,
 			m.created_at AS last_message_at,
 
-			COUNT(
-				CASE
-					WHEN m.receiver_id = $1
-					 AND m.read_at IS NULL
-					THEN 1
-				END
-			) AS unread_count
+			COUNT(unread.id) AS unread_count
 
 		FROM conversations c
 
@@ -189,7 +183,10 @@ func (r *ChatRepository) GetChatList(
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get chat list: %w", err)
+		return nil, fmt.Errorf(
+			"failed to get chat list: %w",
+			err,
+		)
 	}
 
 	defer rows.Close()
@@ -208,14 +205,20 @@ func (r *ChatRepository) GetChatList(
 		)
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan chat list: %w", err)
+			return nil, fmt.Errorf(
+				"failed to scan chat list: %w",
+				err,
+			)
 		}
 
 		chats = append(chats, item)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("chat list rows error: %w", err)
+		return nil, fmt.Errorf(
+			"chat list rows error: %w",
+			err,
+		)
 	}
 
 	return chats, nil

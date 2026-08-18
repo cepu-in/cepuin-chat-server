@@ -46,6 +46,12 @@ func main() {
 	chatService := chat.NewService(chatRepository)
 
 	// =========================
+	// CHAT CONTROLLER
+	// =========================
+
+	chatController := chat.NewController(chatService)
+
+	// =========================
 	// WEBSOCKET
 	// =========================
 
@@ -66,6 +72,12 @@ func main() {
 	mux.HandleFunc(
 		"/health",
 		healthHandler,
+	)
+
+	// Chat HTTP routes
+	chat.RegisterRoutes(
+		mux,
+		chatController,
 	)
 
 	// WebSocket

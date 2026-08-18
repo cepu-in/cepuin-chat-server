@@ -2,6 +2,7 @@ package chat
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -59,6 +60,8 @@ func (c *Controller) GetList(
 	)
 
 	if err != nil {
+		log.Printf("GET CHAT LIST ERROR: %v", err)
+
 		http.Error(
 			w,
 			`{"error":"failed to get chat list"}`,
