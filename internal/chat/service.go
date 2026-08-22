@@ -48,24 +48,40 @@ func (s *Service) GetChatHistory(
 	ctx context.Context,
 	userID uuid.UUID,
 	targetUserID uuid.UUID,
+	limit int,
+	offset int,
 ) ([]repository.Message, error) {
 
 	if userID == targetUserID {
-		return nil, fmt.Errorf("user cannot chat with himself")
+		return []repository.Message{}, nil
+	}
+
+	if limit <= 0 {
+		limit = 20
+	}
+
+	if limit > 100 {
+		limit = 100
+	}
+
+	if offset < 0 {
+		offset = 0
 	}
 
 	messages, err := s.Repository.GetMessageHistory(
 		ctx,
 		userID,
 		targetUserID,
+		limit,
+		offset,
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("service get chat history: %w", err)
+		return nil, err
 	}
 
 	if messages == nil {
-		messages = []repository.Message{}
+		return []repository.Message{}, nil
 	}
 
 	return messages, nil

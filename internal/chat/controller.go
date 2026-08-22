@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/google/uuid"
 )
@@ -81,11 +82,14 @@ func (c *Controller) GetList(
 // GET CHAT HISTORY
 // ============================================================
 
+// ============================================================
+// GET CHAT HISTORY
+// ============================================================
+
 func (c *Controller) GetHistory(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
-
 	w.Header().Set(
 		"Content-Type",
 		"application/json",
@@ -104,7 +108,6 @@ func (c *Controller) GetHistory(
 	}
 
 	userID, err := uuid.Parse(userIDString)
-
 	if err != nil {
 		http.Error(
 			w,
@@ -115,7 +118,6 @@ func (c *Controller) GetHistory(
 	}
 
 	targetUserID, err := uuid.Parse(targetUserIDString)
-
 	if err != nil {
 		http.Error(
 			w,
@@ -125,13 +127,70 @@ func (c *Controller) GetHistory(
 		return
 	}
 
+	// ============================================================
+	// PAGINATION
+	// ============================================================
+
+	limit := 20
+	offset := 0
+
+	if value := r.URL.Query().Get("limit"); value != "" {
+		parsed, err := strconv.Atoi(value)
+
+		if err != nil || parsed <= 0 {
+			http.Error(
+				w,
+				`{"error":"invalid limit"}`,
+				http.StatusBadRequest,
+			)
+			return
+		}
+
+		limit = parsed
+	}
+
+	if value := r.URL.Query().Get("offset"); value != "" {
+		parsed, err := strconv.Atoi(value)
+
+		if err != nil || parsed < 0 {
+			http.Error(
+				w,
+				`{"error":"invalid offset"}`,
+				http.StatusBadRequest,
+			)
+			return
+		}
+
+		offset = parsed
+	}
+
+	// Batasi maksimal supaya client tidak meminta ribuan message
+	if limit > 100 {
+		limit = 100
+	}
+
+	// ============================================================
+	// GET HISTORY
+	// ============================================================
+
 	messages, err := c.Service.GetChatHistory(
 		r.Context(),
 		userID,
 		targetUserID,
+		limit,
+		offset,
 	)
 
 	if err != nil {
+		log.Printf(
+			"GET CHAT HISTORY ERROR: user=%s target=%s limit=%d offset=%d error=%v",
+			userID,
+			targetUserID,
+			limit,
+			offset,
+			err,
+		)
+
 		http.Error(
 			w,
 			`{"error":"failed to get chat history"}`,
@@ -143,6 +202,9 @@ func (c *Controller) GetHistory(
 	json.NewEncoder(w).Encode(
 		map[string]interface{}{
 			"messages": messages,
+			"limit":    limit,
+			"offset":   offset,
+			"has_more": len(messages) == limit,
 		},
 	)
 }

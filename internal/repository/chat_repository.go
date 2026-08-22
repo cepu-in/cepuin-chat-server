@@ -454,6 +454,8 @@ func (r *ChatRepository) GetMessageHistory(
 	ctx context.Context,
 	userID uuid.UUID,
 	targetUserID uuid.UUID,
+	limit int,
+	offset int,
 ) ([]Message, error) {
 
 	rows, err := r.DB.Query(
@@ -467,27 +469,45 @@ func (r *ChatRepository) GetMessageHistory(
 			m.message,
 			m.created_at,
 			m.read_at
-		FROM messages m
-		INNER JOIN conversations c
-			ON c.id = m.conversation_id
-		WHERE
-			(
-				c.user_a_id = $1
-				AND c.user_b_id = $2
-			)
-			OR
-			(
-				c.user_a_id = $2
-				AND c.user_b_id = $1
-			)
+		FROM (
+			SELECT
+				m.id,
+				m.conversation_id,
+				m.sender_id,
+				m.receiver_id,
+				m.message,
+				m.created_at,
+				m.read_at
+			FROM messages m
+			JOIN conversations c
+				ON c.id = m.conversation_id
+			WHERE
+				(
+					c.user_a_id = $1
+					AND c.user_b_id = $2
+				)
+				OR
+				(
+					c.user_a_id = $2
+					AND c.user_b_id = $1
+				)
+			ORDER BY m.created_at DESC
+			LIMIT $3
+			OFFSET $4
+		) m
 		ORDER BY m.created_at ASC
 		`,
 		userID,
 		targetUserID,
+		limit,
+		offset,
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get message history: %w", err)
+		return nil, fmt.Errorf(
+			"failed to get message history: %w",
+			err,
+		)
 	}
 
 	defer rows.Close()
@@ -509,14 +529,20 @@ func (r *ChatRepository) GetMessageHistory(
 		)
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan message: %w", err)
+			return nil, fmt.Errorf(
+				"failed to scan message: %w",
+				err,
+			)
 		}
 
 		messages = append(messages, message)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("message rows error: %w", err)
+		return nil, fmt.Errorf(
+			"message rows error: %w",
+			err,
+		)
 	}
 
 	return messages, nil
