@@ -547,3 +547,44 @@ func (r *ChatRepository) GetMessageHistory(
 
 	return messages, nil
 }
+
+// ============================================================
+// MARK CHAT AS READ
+// ============================================================
+
+func (r *ChatRepository) MarkMessagesAsRead(
+	ctx context.Context,
+	userID uuid.UUID,
+	targetUserID uuid.UUID,
+) (int64, error) {
+	fmt.Println("========================================")
+	fmt.Println("MARK MESSAGES AS READ")
+	fmt.Println("USER ID        :", userID)
+	fmt.Println("TARGET USER ID :", targetUserID)
+	fmt.Println("========================================")
+	if userID == targetUserID {
+		return 0, nil
+	}
+
+	result, err := r.DB.Exec(
+		ctx,
+		`
+		UPDATE messages
+		SET read_at = NOW()
+		WHERE receiver_id = $1
+		  AND sender_id = $2
+		  AND read_at IS NULL
+		`,
+		userID,
+		targetUserID,
+	)
+
+	if err != nil {
+		return 0, fmt.Errorf(
+			"mark messages as read: %w",
+			err,
+		)
+	}
+
+	return result.RowsAffected(), nil
+}

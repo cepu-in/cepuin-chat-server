@@ -208,3 +208,85 @@ func (c *Controller) GetHistory(
 		},
 	)
 }
+
+// ============================================================
+// MARK CHAT AS READ
+// ============================================================
+
+func (c *Controller) MarkAsRead(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+
+	w.Header().Set(
+		"Content-Type",
+		"application/json",
+	)
+
+	userIDString := r.URL.Query().Get("user_id")
+	targetUserIDString := r.URL.Query().Get("target_user_id")
+
+	if userIDString == "" || targetUserIDString == "" {
+		http.Error(
+			w,
+			`{"error":"user_id and target_user_id are required"}`,
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	userID, err := uuid.Parse(userIDString)
+
+	if err != nil {
+		http.Error(
+			w,
+			`{"error":"invalid user_id"}`,
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	targetUserID, err := uuid.Parse(targetUserIDString)
+
+	if err != nil {
+		http.Error(
+			w,
+			`{"error":"invalid target_user_id"}`,
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	// ============================================================
+	// MARK AS READ
+	// ============================================================
+
+	updated, err := c.Service.MarkChatAsRead(
+		r.Context(),
+		userID,
+		targetUserID,
+	)
+
+	if err != nil {
+		log.Printf(
+			"MARK CHAT AS READ ERROR: user=%s target=%s error=%v",
+			userID,
+			targetUserID,
+			err,
+		)
+
+		http.Error(
+			w,
+			`{"error":"failed to mark chat as read"}`,
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	json.NewEncoder(w).Encode(
+		map[string]interface{}{
+			"success":       true,
+			"updated_count": updated,
+		},
+	)
+}

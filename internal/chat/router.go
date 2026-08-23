@@ -15,4 +15,9 @@ func RegisterRoutes(
 		"/chat/history",
 		controller.GetHistory,
 	)
+
+	mux.HandleFunc(
+		"/chat/read",
+		controller.MarkAsRead,
+	)
 }

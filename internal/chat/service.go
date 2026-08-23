@@ -142,3 +142,33 @@ func (s *Service) SendMessage(
 		Message:        message,
 	}, nil
 }
+
+// ============================================================
+// MARK CHAT AS READ
+// ============================================================
+
+func (s *Service) MarkChatAsRead(
+	ctx context.Context,
+	userID uuid.UUID,
+	targetUserID uuid.UUID,
+) (int64, error) {
+
+	if userID == targetUserID {
+		return 0, nil
+	}
+
+	updated, err := s.Repository.MarkMessagesAsRead(
+		ctx,
+		userID,
+		targetUserID,
+	)
+
+	if err != nil {
+		return 0, fmt.Errorf(
+			"service mark chat as read: %w",
+			err,
+		)
+	}
+
+	return updated, nil
+}
