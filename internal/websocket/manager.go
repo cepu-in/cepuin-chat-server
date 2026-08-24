@@ -2,6 +2,8 @@ package websocket
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"sync"
 
 	"nhooyr.io/websocket"
@@ -45,13 +47,40 @@ func (m *Manager) SendToUser(
 	conn, exists := m.clients[userID]
 	m.mu.RUnlock()
 
+	log.Printf(
+		"[WS SEND] target=%s exists=%v conn=%p",
+		userID,
+		exists,
+		conn,
+	)
+
 	if !exists {
-		return nil
+		log.Printf(
+			"[WS SEND FAILED] target user not connected: %s",
+			userID,
+		)
+		return fmt.Errorf("user %s not connected", userID)
 	}
 
-	return conn.Write(
+	err := conn.Write(
 		ctx,
 		websocket.MessageText,
 		message,
 	)
+
+	if err != nil {
+		log.Printf(
+			"[WS SEND ERROR] target=%s error=%v",
+			userID,
+			err,
+		)
+		return err
+	}
+
+	log.Printf(
+		"[WS SEND OK] target=%s",
+		userID,
+	)
+
+	return nil
 }

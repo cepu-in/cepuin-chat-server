@@ -20,4 +20,9 @@ func RegisterRoutes(
 		"/chat/read",
 		controller.MarkAsRead,
 	)
+
+	mux.HandleFunc(
+		"/chat/image",
+		controller.UploadImage,
+	)
 }

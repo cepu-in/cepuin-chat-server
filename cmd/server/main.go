@@ -1,13 +1,13 @@
 package main
 
 import (
-	"log"
-	"net/http"
-
 	"cepuin_chat/internal/chat"
 	"cepuin_chat/internal/database"
 	"cepuin_chat/internal/repository"
+	"cepuin_chat/internal/storage"
 	"cepuin_chat/internal/websocket"
+	"log"
+	"net/http"
 
 	"github.com/joho/godotenv"
 )
@@ -32,7 +32,19 @@ func main() {
 	defer db.Close()
 
 	log.Println("PostgreSQL connected successfully")
+	// =========================
+	// IMAGE SERVICE
+	// =========================
+	wasabiStorage, err := storage.NewWasabiStorage()
 
+	if err != nil {
+		log.Fatal(
+			"failed to initialize Wasabi storage:",
+			err,
+		)
+	}
+
+	log.Println("Wasabi storage connected successfully")
 	// =========================
 	// REPOSITORY
 	// =========================
@@ -43,23 +55,25 @@ func main() {
 	// CHAT SERVICE
 	// =========================
 
-	chatService := chat.NewService(chatRepository)
+	chatService := chat.NewService(chatRepository, wasabiStorage)
 
 	// =========================
 	// CHAT CONTROLLER
 	// =========================
 
-	chatController := chat.NewController(chatService)
+	chatController := chat.NewController(chatService,
+		wasabiStorage)
 
 	// =========================
 	// WEBSOCKET
 	// =========================
 
-	clientManager := websocket.NewClientManager()
+	manager := websocket.NewManager()
 
 	wsController := websocket.NewController(
 		chatService,
-		clientManager,
+		manager,
+		wasabiStorage,
 	)
 
 	// =========================

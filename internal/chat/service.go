@@ -5,17 +5,23 @@ import (
 	"fmt"
 
 	"cepuin_chat/internal/repository"
+	"cepuin_chat/internal/storage"
 
 	"github.com/google/uuid"
 )
 
 type Service struct {
 	Repository *repository.ChatRepository
+	Storage    *storage.WasabiStorage
 }
 
-func NewService(repo *repository.ChatRepository) *Service {
+func NewService(
+	repo *repository.ChatRepository,
+	storageService *storage.WasabiStorage,
+) *Service {
 	return &Service{
 		Repository: repo,
+		Storage:    storageService,
 	}
 }
 
@@ -84,6 +90,45 @@ func (s *Service) GetChatHistory(
 		return []repository.Message{}, nil
 	}
 
+	// ============================================================
+	// GENERATE PRESIGNED URL UNTUK IMAGE
+	// ============================================================
+
+	for i := range messages {
+
+		if messages[i].ImageKey == nil {
+			continue
+		}
+
+		imageKey := *messages[i].ImageKey
+
+		if imageKey == "" {
+			continue
+		}
+
+		if s.Storage == nil {
+			return nil, fmt.Errorf(
+				"storage service is nil",
+			)
+		}
+
+		imageURL, err := s.Storage.GetPresignedURL(
+			ctx,
+			imageKey,
+			3600,
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf(
+				"failed to generate image URL for key %s: %w",
+				imageKey,
+				err,
+			)
+		}
+
+		messages[i].ImageKey = &imageURL
+	}
+
 	return messages, nil
 }
 
@@ -96,14 +141,21 @@ func (s *Service) SendMessage(
 	senderID uuid.UUID,
 	receiverID uuid.UUID,
 	message string,
+	imageKey *string,
 ) (*repository.Message, error) {
 
 	if senderID == receiverID {
-		return nil, fmt.Errorf("sender and receiver cannot be the same")
+		return nil, fmt.Errorf(
+			"sender and receiver cannot be the same",
+		)
 	}
 
-	if message == "" {
-		return nil, fmt.Errorf("message cannot be empty")
+	// Minimal harus ada message atau image
+	if message == "" &&
+		(imageKey == nil || *imageKey == "") {
+		return nil, fmt.Errorf(
+			"message or image is required",
+		)
 	}
 
 	conversationID, err := s.Repository.GetOrCreateConversation(
@@ -119,12 +171,13 @@ func (s *Service) SendMessage(
 		)
 	}
 
-	messageID, err := s.Repository.CreateMessage(
+	savedMessage, err := s.Repository.CreateMessage(
 		ctx,
 		conversationID,
 		senderID,
 		receiverID,
 		message,
+		imageKey,
 	)
 
 	if err != nil {
@@ -134,13 +187,7 @@ func (s *Service) SendMessage(
 		)
 	}
 
-	return &repository.Message{
-		ID:             messageID,
-		ConversationID: conversationID,
-		SenderID:       senderID,
-		ReceiverID:     receiverID,
-		Message:        message,
-	}, nil
+	return savedMessage, nil
 }
 
 // ============================================================
@@ -151,24 +198,85 @@ func (s *Service) MarkChatAsRead(
 	ctx context.Context,
 	userID uuid.UUID,
 	targetUserID uuid.UUID,
-) (int64, error) {
+) ([]repository.Message, error) {
 
 	if userID == targetUserID {
-		return 0, nil
+		return []repository.Message{}, nil
 	}
 
-	updated, err := s.Repository.MarkMessagesAsRead(
+	updatedMessages, err := s.Repository.MarkMessagesAsRead(
 		ctx,
 		userID,
 		targetUserID,
 	)
 
 	if err != nil {
-		return 0, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"service mark chat as read: %w",
 			err,
 		)
 	}
 
-	return updated, nil
+	if updatedMessages == nil {
+		updatedMessages = []repository.Message{}
+	}
+
+	return updatedMessages, nil
+}
+
+// ============================================================
+// SEND IMAGE MESSAGE
+// ============================================================
+
+func (s *Service) SendImageMessage(
+	ctx context.Context,
+	senderID uuid.UUID,
+	receiverID uuid.UUID,
+	imageKey string,
+) (*repository.Message, error) {
+
+	if senderID == receiverID {
+		return nil, fmt.Errorf(
+			"sender and receiver cannot be the same",
+		)
+	}
+
+	if imageKey == "" {
+		return nil, fmt.Errorf(
+			"image key is required",
+		)
+	}
+
+	// Image tetap dianggap sebagai message biasa.
+	// message = ""
+	conversationID, err := s.Repository.GetOrCreateConversation(
+		ctx,
+		senderID,
+		receiverID,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf(
+			"get/create conversation: %w",
+			err,
+		)
+	}
+
+	savedMessage, err := s.Repository.CreateMessage(
+		ctx,
+		conversationID,
+		senderID,
+		receiverID,
+		"",
+		&imageKey,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf(
+			"create image message: %w",
+			err,
+		)
+	}
+
+	return savedMessage, nil
 }

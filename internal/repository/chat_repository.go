@@ -26,6 +26,7 @@ type ChatHistoryMessage struct {
 	SenderID       uuid.UUID  `json:"sender_id"`
 	ReceiverID     uuid.UUID  `json:"receiver_id"`
 	Message        string     `json:"message"`
+	ImageKey       *string    `json:"image_key,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	ReadAt         *time.Time `json:"read_at"`
 }
@@ -41,6 +42,7 @@ type ChatListItem struct {
 	ConversationID uuid.UUID `json:"conversation_id"`
 	OtherUserID    uuid.UUID `json:"other_user_id"`
 	LastMessage    string    `json:"last_message"`
+	LastImageKey   *string   `json:"last_image_key,omitempty"`
 	LastMessageAt  time.Time `json:"last_message_at"`
 	UnreadCount    int       `json:"unread_count"`
 }
@@ -51,6 +53,7 @@ type Message struct {
 	SenderID       uuid.UUID  `json:"sender_id"`
 	ReceiverID     uuid.UUID  `json:"receiver_id"`
 	Message        string     `json:"message"`
+	ImageKey       *string    `json:"image_key,omitempty"`
 	CreatedAt      time.Time  `json:"created_at"`
 	ReadAt         *time.Time `json:"read_at,omitempty"`
 }
@@ -136,49 +139,53 @@ func (r *ChatRepository) GetChatList(
 	rows, err := r.DB.Query(
 		ctx,
 		`
-		SELECT
-			c.id AS conversation_id,
+			SELECT 
+				c.id AS conversation_id,
 
-			CASE
+			CASE 
 				WHEN c.user_a_id = $1 THEN c.user_b_id
 				ELSE c.user_a_id
 			END AS other_user_id,
 
-			m.message AS last_message,
-			m.created_at AS last_message_at,
+			COALESCE(m.message, '') AS last_message,
+				m.image_key AS last_image_key,
+			COALESCE(m.created_at, c.updated_at) AS last_message_at,
 
 			COUNT(unread.id) AS unread_count
 
-		FROM conversations c
+			FROM conversations c
 
-		LEFT JOIN LATERAL (
-			SELECT
-				message,
-				created_at
-			FROM messages
-			WHERE conversation_id = c.id
-			ORDER BY created_at DESC
-			LIMIT 1
-		) m ON true
+			LEFT JOIN LATERAL (
+				SELECT 
+					message,
+					image_key,
+					created_at
+				FROM messages
+				WHERE conversation_id = c.id
+				ORDER BY created_at DESC
+				LIMIT 1
+			) m ON true
 
-		LEFT JOIN messages unread
-			ON unread.conversation_id = c.id
-			AND unread.receiver_id = $1
-			AND unread.read_at IS NULL
+			LEFT JOIN messages unread
+				ON unread.conversation_id = c.id
+				AND unread.receiver_id = $1
+				AND unread.read_at IS NULL
 
-		WHERE c.user_a_id = $1
-		   OR c.user_b_id = $1
+			WHERE c.user_a_id = $1
+			OR c.user_b_id = $1
 
-		GROUP BY
-			c.id,
-			c.user_a_id,
-			c.user_b_id,
-			m.message,
-			m.created_at
+			GROUP BY 
+				c.id,
+				c.user_a_id,
+				c.user_b_id,
+				m.message,
+				m.image_key,
+				m.created_at,
+				c.updated_at
 
-		ORDER BY
-			m.created_at DESC
-		`,
+			ORDER BY 
+				COALESCE(m.created_at, c.updated_at) DESC
+        `,
 		userID,
 	)
 
@@ -194,12 +201,14 @@ func (r *ChatRepository) GetChatList(
 	var chats []ChatListItem
 
 	for rows.Next() {
+
 		var item ChatListItem
 
 		err := rows.Scan(
 			&item.ConversationID,
 			&item.OtherUserID,
 			&item.LastMessage,
+			&item.LastImageKey,
 			&item.LastMessageAt,
 			&item.UnreadCount,
 		)
@@ -232,21 +241,21 @@ func (r *ChatRepository) GetConversations(
 	rows, err := r.DB.Query(
 		ctx,
 		`
-		SELECT
+		SELECT 
 			c.id AS conversation_id,
 
-			CASE
+			CASE 
 				WHEN c.user_a_id = $1 THEN c.user_b_id
 				ELSE c.user_a_id
 			END AS target_user_id,
 
-			m.message AS last_message,
-			m.created_at AS last_message_at
+			COALESCE(m.message, '') AS last_message,
+			COALESCE(m.created_at, c.updated_at) AS last_message_at
 
 		FROM conversations c
 
 		LEFT JOIN LATERAL (
-			SELECT
+			SELECT 
 				message,
 				created_at
 			FROM messages
@@ -256,9 +265,9 @@ func (r *ChatRepository) GetConversations(
 		) m ON true
 
 		WHERE c.user_a_id = $1
-		   OR c.user_b_id = $1
+		OR c.user_b_id = $1
 
-		ORDER BY
+		ORDER BY 
 			COALESCE(m.created_at, c.updated_at) DESC
 		`,
 		userID,
@@ -308,19 +317,20 @@ func (r *ChatRepository) CreateMessage(
 	senderID uuid.UUID,
 	receiverID uuid.UUID,
 	message string,
-) (uuid.UUID, error) {
+	imageKey *string,
+) (*Message, error) {
 
-	messageID := uuid.New()
+	var savedMessage Message
 
-	_, err := r.DB.Exec(
+	err := r.DB.QueryRow(
 		ctx,
 		`
 		INSERT INTO messages (
-			id,
 			conversation_id,
 			sender_id,
 			receiver_id,
 			message,
+			image_key,
 			created_at
 		)
 		VALUES (
@@ -331,19 +341,40 @@ func (r *ChatRepository) CreateMessage(
 			$5,
 			NOW()
 		)
+		RETURNING
+			id,
+			conversation_id,
+			sender_id,
+			receiver_id,
+			message,
+			image_key,
+			created_at,
+			read_at
 		`,
-		messageID,
 		conversationID,
 		senderID,
 		receiverID,
 		message,
+		imageKey,
+	).Scan(
+		&savedMessage.ID,
+		&savedMessage.ConversationID,
+		&savedMessage.SenderID,
+		&savedMessage.ReceiverID,
+		&savedMessage.Message,
+		&savedMessage.ImageKey,
+		&savedMessage.CreatedAt,
+		&savedMessage.ReadAt,
 	)
 
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("failed to create message: %w", err)
+		return nil, fmt.Errorf(
+			"insert message: %w",
+			err,
+		)
 	}
 
-	return messageID, nil
+	return &savedMessage, nil
 }
 
 func (r *ChatRepository) GetChatHistory(
@@ -397,6 +428,7 @@ func (r *ChatRepository) GetChatHistory(
 			sender_id,
 			receiver_id,
 			message,
+			image_key,
 			created_at,
 			read_at
 		FROM messages
@@ -426,6 +458,7 @@ func (r *ChatRepository) GetChatHistory(
 			&msg.SenderID,
 			&msg.ReceiverID,
 			&msg.Message,
+			&msg.ImageKey,
 			&msg.CreatedAt,
 			&msg.ReadAt,
 		)
@@ -467,35 +500,25 @@ func (r *ChatRepository) GetMessageHistory(
 			m.sender_id,
 			m.receiver_id,
 			m.message,
+			m.image_key,
 			m.created_at,
 			m.read_at
-		FROM (
-			SELECT
-				m.id,
-				m.conversation_id,
-				m.sender_id,
-				m.receiver_id,
-				m.message,
-				m.created_at,
-				m.read_at
-			FROM messages m
-			JOIN conversations c
-				ON c.id = m.conversation_id
-			WHERE
-				(
-					c.user_a_id = $1
-					AND c.user_b_id = $2
-				)
-				OR
-				(
-					c.user_a_id = $2
-					AND c.user_b_id = $1
-				)
-			ORDER BY m.created_at DESC
-			LIMIT $3
-			OFFSET $4
-		) m
-		ORDER BY m.created_at ASC
+		FROM messages m
+		INNER JOIN conversations c
+			ON c.id = m.conversation_id
+		WHERE
+			(
+				c.user_a_id = $1
+				AND c.user_b_id = $2
+			)
+			OR
+			(
+				c.user_a_id = $2
+				AND c.user_b_id = $1
+			)
+		ORDER BY m.created_at DESC
+		LIMIT $3
+		OFFSET $4
 		`,
 		userID,
 		targetUserID,
@@ -512,7 +535,7 @@ func (r *ChatRepository) GetMessageHistory(
 
 	defer rows.Close()
 
-	var messages []Message
+	messages := make([]Message, 0)
 
 	for rows.Next() {
 
@@ -524,6 +547,7 @@ func (r *ChatRepository) GetMessageHistory(
 			&message.SenderID,
 			&message.ReceiverID,
 			&message.Message,
+			&message.ImageKey,
 			&message.CreatedAt,
 			&message.ReadAt,
 		)
@@ -545,6 +569,16 @@ func (r *ChatRepository) GetMessageHistory(
 		)
 	}
 
+	// ============================================================
+	// REVERSE
+	// ============================================================
+	// Database mengambil terbaru -> terlama.
+	// UI membutuhkan lama -> terbaru.
+
+	for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+		messages[i], messages[j] = messages[j], messages[i]
+	}
+
 	return messages, nil
 }
 
@@ -556,17 +590,13 @@ func (r *ChatRepository) MarkMessagesAsRead(
 	ctx context.Context,
 	userID uuid.UUID,
 	targetUserID uuid.UUID,
-) (int64, error) {
-	fmt.Println("========================================")
-	fmt.Println("MARK MESSAGES AS READ")
-	fmt.Println("USER ID        :", userID)
-	fmt.Println("TARGET USER ID :", targetUserID)
-	fmt.Println("========================================")
+) ([]Message, error) {
+
 	if userID == targetUserID {
-		return 0, nil
+		return []Message{}, nil
 	}
 
-	result, err := r.DB.Exec(
+	rows, err := r.DB.Query(
 		ctx,
 		`
 		UPDATE messages
@@ -574,17 +604,130 @@ func (r *ChatRepository) MarkMessagesAsRead(
 		WHERE receiver_id = $1
 		  AND sender_id = $2
 		  AND read_at IS NULL
+		RETURNING 
+			id,
+			conversation_id,
+			sender_id,
+			receiver_id,
+			message,
+			image_key,
+			created_at,
+			read_at
 		`,
 		userID,
 		targetUserID,
 	)
 
 	if err != nil {
-		return 0, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"mark messages as read: %w",
 			err,
 		)
 	}
 
-	return result.RowsAffected(), nil
+	defer rows.Close()
+
+	messages := make([]Message, 0)
+
+	for rows.Next() {
+		var message Message
+
+		err := rows.Scan(
+			&message.ID,
+			&message.ConversationID,
+			&message.SenderID,
+			&message.ReceiverID,
+			&message.Message,
+			&message.ImageKey,
+			&message.CreatedAt,
+			&message.ReadAt,
+		)
+
+		if err != nil {
+			return nil, fmt.Errorf(
+				"scan marked message: %w",
+				err,
+			)
+		}
+
+		messages = append(messages, message)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf(
+			"marked message rows error: %w",
+			err,
+		)
+	}
+
+	return messages, nil
+}
+
+// ============================================================
+// CREATE IMAGE MESSAGE
+// ============================================================
+
+func (r *ChatRepository) CreateImageMessage(
+	ctx context.Context,
+	conversationID uuid.UUID,
+	senderID uuid.UUID,
+	receiverID uuid.UUID,
+	imageKey string,
+) (*Message, error) {
+
+	var savedMessage Message
+
+	err := r.DB.QueryRow(
+		ctx,
+		`
+		INSERT INTO messages (
+			conversation_id,
+			sender_id,
+			receiver_id,
+			message,
+			image_key,
+			created_at
+		)
+		VALUES (
+			$1,
+			$2,
+			$3,
+			$4,
+			$5,
+			NOW()
+		)
+		RETURNING
+			id,
+			conversation_id,
+			sender_id,
+			receiver_id,
+			message,
+			image_key,
+			created_at,
+			read_at
+		`,
+		conversationID,
+		senderID,
+		receiverID,
+		"",       // message kosong
+		imageKey, // key dari Wasabi
+	).Scan(
+		&savedMessage.ID,
+		&savedMessage.ConversationID,
+		&savedMessage.SenderID,
+		&savedMessage.ReceiverID,
+		&savedMessage.Message,
+		&savedMessage.ImageKey,
+		&savedMessage.CreatedAt,
+		&savedMessage.ReadAt,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf(
+			"insert image message: %w",
+			err,
+		)
+	}
+
+	return &savedMessage, nil
 }
