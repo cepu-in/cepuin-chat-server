@@ -348,11 +348,40 @@ func (c *Controller) handleMessage(
 		)
 	}
 
+	notificationEvent := map[string]interface{}{
+		"type":            "chat_notification",
+		"conversation_id": savedMessage.ConversationID.String(),
+		"sender_id":       savedMessage.SenderID.String(),
+		"message_id":      savedMessage.ID.String(),
+	}
+
+	notificationData, err := json.Marshal(
+		notificationEvent,
+	)
+
+	if err != nil {
+		log.Printf(
+			"failed to marshal chat notification: %v",
+			err,
+		)
+
+		return
+	}
+
+	err = c.Manager.SendToUser(
+		context.Background(),
+		receiverID.String(),
+		notificationData,
+	)
+
+	if err != nil {
+		log.Printf(
+			"failed to send chat notification: %v",
+			err,
+		)
+	}
 	// ============================================================
 	// SEND BACK TO SENDER
-	//
-	// Ini penting supaya sender juga mendapatkan ID message
-	// dan created_at dari server.
 	// ============================================================
 
 	err = c.Manager.SendToUser(

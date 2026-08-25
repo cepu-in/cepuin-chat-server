@@ -630,3 +630,61 @@ func (c *Controller) MarkAsRead(
 		},
 	)
 }
+
+func (c *Controller) GetUnreadCount(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	userIDString := r.URL.Query().Get("user_id")
+
+	if userIDString == "" {
+		http.Error(
+			w,
+			"user_id required",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	userID, err := uuid.Parse(userIDString)
+
+	if err != nil {
+		http.Error(
+			w,
+			"invalid user_id",
+			http.StatusBadRequest,
+		)
+		return
+	}
+
+	count, err := c.Service.GetUnreadMessageCount(
+		r.Context(),
+		userID,
+	)
+
+	if err != nil {
+		log.Printf(
+			"failed to get unread count: %v",
+			err,
+		)
+
+		http.Error(
+			w,
+			"failed to get unread count",
+			http.StatusInternalServerError,
+		)
+
+		return
+	}
+
+	w.Header().Set(
+		"Content-Type",
+		"application/json",
+	)
+
+	json.NewEncoder(w).Encode(
+		map[string]interface{}{
+			"unread_count": count,
+		},
+	)
+}

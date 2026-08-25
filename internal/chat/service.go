@@ -133,6 +133,30 @@ func (s *Service) GetChatHistory(
 }
 
 // ============================================================
+// GET UNREAD MESSAGE COUNT
+// ============================================================
+
+func (s *Service) GetUnreadMessageCount(
+	ctx context.Context,
+	userID uuid.UUID,
+) (int, error) {
+
+	count, err := s.Repository.GetUnreadMessageCount(
+		ctx,
+		userID,
+	)
+
+	if err != nil {
+		return 0, fmt.Errorf(
+			"service get unread message count: %w",
+			err,
+		)
+	}
+
+	return count, nil
+}
+
+// ============================================================
 // SEND MESSAGE
 // ============================================================
 

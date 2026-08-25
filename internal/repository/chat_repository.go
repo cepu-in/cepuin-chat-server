@@ -582,9 +582,33 @@ func (r *ChatRepository) GetMessageHistory(
 	return messages, nil
 }
 
-// ============================================================
-// MARK CHAT AS READ
-// ============================================================
+func (r *ChatRepository) GetUnreadMessageCount(
+	ctx context.Context,
+	userID uuid.UUID,
+) (int, error) {
+
+	var count int
+
+	err := r.DB.QueryRow(
+		ctx,
+		`
+		SELECT COUNT(*)
+		FROM messages
+		WHERE receiver_id = $1
+		  AND read_at IS NULL
+		`,
+		userID,
+	).Scan(&count)
+
+	if err != nil {
+		return 0, fmt.Errorf(
+			"failed to get unread message count: %w",
+			err,
+		)
+	}
+
+	return count, nil
+}
 
 func (r *ChatRepository) MarkMessagesAsRead(
 	ctx context.Context,
