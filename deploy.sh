@@ -2,7 +2,6 @@
 
 set -e
 
-SERVER="root@srv1433323"
 SERVER_PATH="/var/www/cepuin_chat"
 BRANCH="main"
 
@@ -11,44 +10,52 @@ echo "       CEPUIN CHAT SERVER DEPLOY"
 echo "========================================"
 
 echo ""
-echo "[1/4] Checking git status..."
-git status
+echo "[1/5] Checking server directory..."
+cd "$SERVER_PATH"
+
+echo "Current directory:"
+pwd
 
 echo ""
-echo "[2/4] Pushing to GitHub..."
-git push origin "$BRANCH"
+echo "[2/5] Pulling latest code from GitHub..."
+git pull origin "$BRANCH"
 
 echo ""
-echo "[3/4] Pulling latest code on server..."
+echo "[3/5] Checking environment..."
 
-ssh "$SERVER" << EOF
-    set -e
+if [ ! -f .env ]; then
+    echo "ERROR: .env tidak ditemukan!"
+    exit 1
+fi
 
-    cd "$SERVER_PATH"
+echo ".env found."
 
-    echo "Server directory:"
-    pwd
+echo ""
+echo "[4/5] Updating Go dependencies..."
+go mod download
 
-    echo ""
-    echo "Pulling GitHub..."
-    git pull origin "$BRANCH"
+echo ""
+echo "[5/5] Restarting Air..."
 
-    echo ""
-    echo "Current commit:"
-    git log -1 --oneline
+pkill -f "air" || true
 
-    echo ""
-    echo "Checking .env..."
-    if [ ! -f .env ]; then
-        echo "ERROR: .env tidak ditemukan!"
-        exit 1
-    fi
+sleep 2
 
-    echo ""
-    echo "Deployment source updated."
-EOF
+nohup air > /var/log/cepuin_chat_air.log 2>&1 &
+
+sleep 3
 
 echo ""
 echo "========================================"
 echo "       DEPLOYMENT FINISHED"
 echo "========================================"
+
+echo ""
+echo "Checking port 8081..."
+
+ss -ltnp | grep ':8081' || true
+
+echo ""
+echo "Health check..."
+
+curl -i http://127.0.0.1:8081/health
