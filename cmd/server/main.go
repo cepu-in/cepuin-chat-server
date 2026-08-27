@@ -105,12 +105,12 @@ func main() {
 	// =========================
 
 	server := &http.Server{
-		Addr:    ":8080",
+		Addr:    ":8081",
 		Handler: mux,
 	}
 
 	log.Println(
-		"=====================CEPUIN CHAT SERVER starting on :8080 =======================",
+		"=====================CEPUIN CHAT SERVER starting on :8081 =======================",
 	)
 
 	if err := server.ListenAndServe(); err != nil {
