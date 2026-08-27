@@ -18,6 +18,7 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: 22
           script: |
+            export PATH=/usr/local/go/bin:$PATH
             set -e
 
             echo "========================================================"
