@@ -1,0 +1,60 @@
+name: Deploy Cepuin Chat
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+
+            echo "========================================================"
+            echo "       CEPUIN CHAT GO SERVER AUTO DEPLOY"
+            echo "========================================================"
+
+            cd /var/www/cepuin_chat
+
+            echo ""
+            echo "[1/6] Pulling latest code..."
+            git pull origin main
+
+            echo ""
+            echo "[2/6] Checking environment..."
+            test -f .env
+
+            echo ""
+            echo "[3/6] Updating Go dependencies..."
+            go mod download
+
+            echo ""
+            echo "[4/6] Restarting Air..."
+            pkill -f "air" || true
+
+            sleep 2
+
+            nohup air > /var/log/cepuin_chat_air.log 2>&1 &
+
+            echo ""
+            echo "[5/6] Waiting for server..."
+            sleep 5
+
+            echo ""
+            echo "[6/6] Health check..."
+            curl -f http://127.0.0.1:8081/health
+
+            echo ""
+            echo "========================================"
+            echo "       DEPLOYMENT SUCCESS"
+            echo "========================================"
